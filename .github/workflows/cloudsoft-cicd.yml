@@ -36,50 +36,49 @@ jobs:
     runs-on: self-hosted
     needs: build
     steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: app-artifacts
-        path: ./artifacts
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: app-artifacts
+          path: ./artifacts
 
-    - name: Stop application
-      run: |
-        sudo systemctl stop CloudSoft.service || true
-        
-    - name: Deploy application
-      run: |
-        sudo mkdir -p /opt/CloudSoft
-        sudo cp -r ./artifacts/* /opt/CloudSoft/
-        
-    - name: Create service file if not exists
-      run: |
-        if [ ! -f /etc/systemd/system/CloudSoft.service ]; then
-          sudo tee /etc/systemd/system/CloudSoft.service > /dev/null << 'EOF'
-          [Unit]
-          Description=CloudSoft ASP.NET Web App
+      - name: Stop application
+        run: |
+          sudo systemctl stop CloudSoft.service || true
 
-          [Service]
-          WorkingDirectory=/opt/CloudSoft
-          ExecStart=/usr/bin/dotnet /opt/CloudSoft/CloudSoft.dll
-          Restart=always
-          RestartSec=10
-          KillSignal=SIGINT
-          SyslogIdentifier=CloudSoft
-          User=www-data
-          Environment=ASPNETCORE_ENVIRONMENT=Production
-          Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
-          Environment="ASPNETCORE_URLS=http://*:5000"
+      - name: Deploy application
+        run: |
+          sudo mkdir -p /opt/CloudSoft
+          sudo cp -r ./artifacts/* /opt/CloudSoft/
 
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-          
-          sudo systemctl daemon-reload
-          sudo systemctl enable CloudSoft.service
-        fi
-        
-    - name: Fix permissions and start service
-      run: |
-        sudo chown -R www-data:www-data /opt/CloudSoft
-        sudo chmod -R 755 /opt/CloudSoft
-        sudo systemctl start CloudSoft.service
+      - name: Create service file if not exists
+        run: |
+          if [ ! -f /etc/systemd/system/CloudSoft.service ]; then
+            sudo bash -c 'cat > /etc/systemd/system/CloudSoft.service << EOL
+  [ Unit ]
+  Description=CloudSoft ASP.NET Web App
+
+  [ Service ]
+  WorkingDirectory=/opt/CloudSoft
+  ExecStart=/usr/bin/dotnet /opt/CloudSoft/CloudSoft.dll
+  Restart=always
+  RestartSec=10
+  KillSignal=SIGINT
+  SyslogIdentifier=CloudSoft
+  User=www-data
+  Environment=ASPNETCORE_ENVIRONMENT=Production
+  Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+  Environment="ASPNETCORE_URLS=http://*:5000"
+
+  [ Install ]
+  WantedBy=multi-user.target
+  EOL'
+  sudo systemctl daemon-reload
+  sudo systemctl enable CloudSoft.service
+  fi
+
+  - name: Fix permissions and start service
+    run: |
+      sudo chown -R www-data:www-data /opt/CloudSoft
+      sudo chmod -R 755 /opt/CloudSoft
+      sudo systemctl start CloudSoft.service
