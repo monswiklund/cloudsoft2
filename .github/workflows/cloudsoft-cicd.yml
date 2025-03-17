@@ -19,12 +19,12 @@ jobs:
         dotnet-version: '8.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore /Users/mans/Skola/yh/vt25/6-grund-molnapp/inlämning-2/CloudSoft2/CloudSoft/CloudSoft.csproj
+      run: dotnet restore ./CloudSoft/CloudSoft.csproj
 
     - name: Build and publish
       run: |
-        dotnet build /Users/mans/Skola/yh/vt25/6-grund-molnapp/inlämning-2/CloudSoft2/CloudSoft/CloudSoft.csproj --no-restore
-        dotnet publish /Users/mans/Skola/yh/vt25/6-grund-molnapp/inlämning-2/CloudSoft2/CloudSoft/CloudSoft.csproj -c Release -o ./publish
+        dotnet build ./CloudSoft/CloudSoft.csproj --no-restore
+        dotnet publish ./CloudSoft/CloudSoft.csproj -c Release -o ./publish
 
     - name: Upload app artifacts
       uses: actions/upload-artifact@v4
