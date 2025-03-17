@@ -1,0 +1,1 @@
+az vm create --resource-group AppRG --name ReverseProxy --image Ubuntu2404 --admin-username azureuser --ssh-key-values @~/.ssh/id_rsa.pub --vnet-name AppVNet --subnet AppSubnet --nsg AppNSG --public-ip-address ProxyPublicIP

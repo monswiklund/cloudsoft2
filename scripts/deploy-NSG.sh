@@ -1,0 +1,3 @@
+az network nsg create --resource-group AppRG --name AppNSG
+az network nsg rule create --resource-group AppRG --nsg-name AppNSG --name AllowSSH --priority 100 --destination-port-ranges 22 --direction Inbound --access Allow --protocol Tcp
+az network nsg rule create --resource-group AppRG --nsg-name AppNSG --name AllowHTTP --priority 110 --destination-port-ranges 80 5000 --direction Inbound --access Allow --protocol Tcp
