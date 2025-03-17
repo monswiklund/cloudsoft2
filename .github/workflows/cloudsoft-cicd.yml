@@ -10,21 +10,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
     - name: Install .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    - name: Check out repository
-      uses: actions/checkout@v4
-
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore ./CloudSoft/CloudSoft.csproj
 
     - name: Build and publish
       run: |
-        dotnet build --no-restore
-        dotnet publish -c Release -o ./publish        
+        dotnet build ./CloudSoft/CloudSoft.csproj --no-restore
+        dotnet publish ./CloudSoft/CloudSoft.csproj -c Release -o ./publish
 
     - name: Upload app artifacts
       uses: actions/upload-artifact@v4
@@ -44,7 +44,7 @@ jobs:
 
     - name: Stop application
       run: |
-        sudo systemctl stop GithubActionsDemo.service || true
+        sudo systemctl stop CloudSoft.service || true
         
     - name: Deploy application
       run: |
