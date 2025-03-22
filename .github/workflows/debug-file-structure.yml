@@ -1,26 +1,26 @@
 name: Debug Filstruktur
 
 on:
-  workflow_dispatch:  # Tillåter endast manuell körning
+  workflow_dispatch: # Tillåter endast manuell körning
 
 jobs:
   debug-file-structure:
     name: Debugga filstruktur
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checka ut koden
         uses: actions/checkout@v3
-      
+
       - name: Lista alla filer och kataloger
         run: |
           echo "Lista över alla filer och kataloger i repository:"
           find . -type f -name "*.bicep" | sort
-          
+
           echo "--------------------------------------------"
           echo "Detaljerad katalogstruktur:"
           ls -la
-          
+
           echo "--------------------------------------------"
           echo "Innehåll i azure-deployment (om den finns):"
           if [ -d "azure-deployment" ]; then
@@ -35,11 +35,16 @@ jobs:
           else
             echo "Katalogen azure-deployment finns inte!"
           fi
-          
+
           echo "--------------------------------------------"
           echo "Sök efter alla networking.bicep filer:"
           find . -name "networking.bicep" -type f
-          
+
           echo "--------------------------------------------"
           echo "Aktuell arbetskatalog:"
           pwd
+
+          - name: Visa exakt innehåll i networking.bicep
+  run: |
+    echo "Innehåll i networking.bicep:"
+    cat azure-deployment/modules/networking.bicep
