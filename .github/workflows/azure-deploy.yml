@@ -4,19 +4,19 @@ on:
   push:
     branches: [main]
     paths:
-      - "bicep/**"
-      - "scripts/**"
+      - "azure-deployment/**" # Korrekt sökväg till dina Bicep-filer
+      - "azure-deployment/scripts/**" # Om dina skript ligger här
       - ".github/workflows/azure-deploy.yml"
   pull_request:
     branches: [main]
     paths:
-      - "bicep/**"
-      - "scripts/**"
+      - "azure-deployment/**"
+      - "azure-deployment/scripts/**"
   workflow_dispatch: # Tillåter manuell körning
 
 env:
-  BICEP_FILE_PATH: "./bicep/main.bicep"
-  PARAMETERS_FILE_PATH: "./bicep/main.parameters.json"
+  BICEP_FILE_PATH: "./azure-deployment/main.bicep"
+  PARAMETERS_FILE_PATH: "./azure-deployment/parameters/main.parameters.json"
   DEPLOYMENT_NAME: "github-workflow-deployment"
 
 jobs:
