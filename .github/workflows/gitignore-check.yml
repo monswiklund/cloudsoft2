@@ -1,0 +1,34 @@
+name: .gitignore checker
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Kolla koden
+      uses: actions/checkout@v2
+      
+    - name: Kontrollera om gitignore finns
+      run: |
+        if [ -f .gitignore ]; then
+          echo ".gitignore finns! Bra jobbat!"
+        else
+          echo "Ingen .gitignore hittades. Skapa en för att undvika att checka in onödiga filer."
+        fi
+        
+    - name: Räkna antal filer i projektet
+      run: |
+        echo "Projektet innehåller följande antal filer:"
+        find . -type f | grep -v ".git/" | wc -l
+        
+    - name: Sök efter potentiella problem
+      run: |
+        # Sök efter hårdkodade lösenord
+        echo "Söker efter misstänkta hårdkodade lösenord..."
+        grep -r "password.*=" --include="*.cs" --include="*.bicep" . || echo "Inga uppenbara lösenord hittades! 👍"
