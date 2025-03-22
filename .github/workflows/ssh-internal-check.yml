@@ -1,0 +1,46 @@
+name: SSH Intern Kontroll
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  workflow_dispatch:  # Tillåter manuell körning
+
+jobs:
+  check-ssh-internal:
+    name: Kontrollera SSH Intern Konfiguration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checka ut koden
+        uses: actions/checkout@v3
+      
+      - name: Kontrollera att SSH 22 internt bara är konfigurerat från Bastion till övriga servrar
+        run: |
+          echo "Kontrollerar att SSH internt bara är konfigurerat från Bastion till övriga servrar..."
+          
+          # Kontrollera att Reverse Proxy tillåter SSH från Bastion
+          REVERSEPROXY_SSH_FROM_BASTION=$(grep -A10 "reverseProxyNsg" networking.bicep | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
+          
+          # Kontrollera att App Server tillåter SSH från Bastion
+          APPSERVER_SSH_FROM_BASTION=$(grep -A10 "appServerNsg" networking.bicep | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
+          
+          # Kontrollera att det inte finns andra interna SSH-regler
+          TOTAL_INTERNAL_SSH_RULES=$(grep -c -E "name:.*AllowSsh.*sourceAddressPrefix:.*SubnetPrefix.*destinationPortRange:.*22" networking.bicep)
+          
+          if [ "$REVERSEPROXY_SSH_FROM_BASTION" -eq 1 ] && [ "$APPSERVER_SSH_FROM_BASTION" -eq 1 ] && [ "$TOTAL_INTERNAL_SSH_RULES" -eq 2 ]; then
+            echo "✓ SSH internt är korrekt konfigurerat från Bastion till övriga servrar."
+            exit 0
+          else
+            echo "Fel: SSH internt är inte korrekt konfigurerat från Bastion till övriga servrar!"
+            echo "ReverseProxy har SSH-regel från Bastion: $REVERSEPROXY_SSH_FROM_BASTION (bör vara 1)"
+            echo "AppServer har SSH-regel från Bastion: $APPSERVER_SSH_FROM_BASTION (bör vara 1)"
+            echo "Totalt antal interna SSH-regler: $TOTAL_INTERNAL_SSH_RULES (bör vara 2)"
+            echo "Kontrollera att både reverseProxyNsg och appServerNsg har AllowSshFromBastion-regler."
+            exit 1
+          fi

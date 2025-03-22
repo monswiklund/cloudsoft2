@@ -1,0 +1,46 @@
+name: Deny All Inbound Kontroll
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  workflow_dispatch:  # Tillåter manuell körning
+
+jobs:
+  check-deny-all-rules:
+    name: Kontrollera Deny All Inbound-regler
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checka ut koden
+        uses: actions/checkout@v3
+      
+      - name: Kontrollera att DenyAllInbound-regler finns på alla NSGs
+        run: |
+          echo "Kontrollerar att 'DenyAllInbound' finns på alla NSGs..."
+          
+          # Kontrollera att varje NSG har en DenyAllInbound-regel
+          BASTION_NSG_DENY=$(grep -A10 "bastionNsg" networking.bicep | grep -c "name: 'DenyAllInbound'")
+          REVERSEPROXY_NSG_DENY=$(grep -A10 "reverseProxyNsg" networking.bicep | grep -c "name: 'DenyAllInbound'")
+          APPSERVER_NSG_DENY=$(grep -A10 "appServerNsg" networking.bicep | grep -c "name: 'DenyAllInbound'")
+          
+          # Kontrollera att varje regel har högst prioritet (4096)
+          HIGH_PRIORITY_RULES=$(grep -A5 "name: 'DenyAllInbound'" networking.bicep | grep -c "priority: 4096")
+          
+          if [ "$BASTION_NSG_DENY" -ge 1 ] && [ "$REVERSEPROXY_NSG_DENY" -ge 1 ] && [ "$APPSERVER_NSG_DENY" -ge 1 ] && [ "$HIGH_PRIORITY_RULES" -ge 3 ]; then
+            echo "✓ DenyAllInbound-regler finns på alla NSGs med rätt prioritet."
+            exit 0
+          else
+            echo "Fel: Alla NSGs har inte korrekta DenyAllInbound-regler!"
+            echo "bastionNsg har DenyAllInbound: $BASTION_NSG_DENY (bör vara 1)"
+            echo "reverseProxyNsg har DenyAllInbound: $REVERSEPROXY_NSG_DENY (bör vara 1)"
+            echo "appServerNsg har DenyAllInbound: $APPSERVER_NSG_DENY (bör vara 1)"
+            echo "Regler med prioritet 4096: $HIGH_PRIORITY_RULES (bör vara minst 3)"
+            echo "Kontrollera att alla NSGs har en DenyAllInbound-regel med prioritet 4096."
+            exit 1
+          fi

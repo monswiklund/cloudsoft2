@@ -1,0 +1,40 @@
+name: SSH Internet Kontroll
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - '**networking.bicep'
+  workflow_dispatch:  # Tillåter manuell körning
+
+jobs:
+  check-ssh-internet:
+    name: Kontrollera SSH Internet Konfiguration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checka ut koden
+        uses: actions/checkout@v3
+      
+      - name: Kontrollera att SSH 22 från internet bara är öppen till Bastion
+        run: |
+          echo "Kontrollerar att SSH port 22 från internet bara är öppen till Bastion..."
+          
+          # Räkna antalet regler som tillåter SSH från internet
+          SSH_FROM_INTERNET=$(grep -A5 "name: 'AllowSsh.*Inbound'" networking.bicep | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
+          BASTION_SSH_RULE=$(grep -A5 "name: 'AllowSshInbound'" networking.bicep | grep -A5 "bastionNsg" | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
+          
+          if [ "$SSH_FROM_INTERNET" -eq 1 ] && [ "$BASTION_SSH_RULE" -eq 1 ]; then
+            echo "✓ SSH port 22 från internet är endast öppen till Bastion."
+            exit 0
+          else
+            echo "Fel: SSH port 22 från internet är inte korrekt konfigurerad!"
+            echo "Antalet SSH-regler från internet: $SSH_FROM_INTERNET (bör vara 1)"
+            echo "SSH-regel finns i bastionNsg: $BASTION_SSH_RULE (bör vara 1)"
+            echo "Kontrollera att du endast har EN regel som tillåter SSH från internet, och att den finns i bastionNsg."
+            exit 1
+          fi
