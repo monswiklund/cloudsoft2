@@ -2,37 +2,45 @@ name: HTTP Port 80 Kontroll
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
+      - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
-  workflow_dispatch:  # Tillåter manuell körning
+      - "azure-deployment/modules/networking.bicep"
+  workflow_dispatch: # Tillåter manuell körning
 
 jobs:
   check-http-port-80:
     name: Kontrollera HTTP Port 80 Konfiguration
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checka ut koden
         uses: actions/checkout@v3
-      
+
       - name: Kontrollera att port 80 är öppen från internet till Reverse Proxy
         run: |
           echo "Kontrollerar att port 80 är öppen från internet till Reverse Proxy..."
-          
+
+          # Använd den korrekta sökvägen till networking.bicep
+          NETWORK_FILE="azure-deployment/modules/networking.bicep"
+
+          if [ ! -f "$NETWORK_FILE" ]; then
+            echo "Fel: $NETWORK_FILE existerar inte!"
+            exit 1
+          fi
+
           # Sök efter relevanta regler i reverseProxyNsg
-          if grep -q "name: 'AllowHttpInbound'" networking.bicep && \
-             grep -q "sourceAddressPrefix: 'Internet'" networking.bicep && \
-             grep -q "destinationPortRange: '80'" networking.bicep; then
+          if grep -q "name: 'AllowHttpInbound'" "$NETWORK_FILE" && \
+             grep -q "sourceAddressPrefix: 'Internet'" "$NETWORK_FILE" && \
+             grep -q "destinationPortRange: '80'" "$NETWORK_FILE"; then
             echo "✓ Port 80 är korrekt öppen från internet till Reverse Proxy."
             exit 0
           else
             echo "Fel: Kunde inte bekräfta att port 80 är öppen från internet till Reverse Proxy!"
-            echo "Kontrollera att följande finns i networking.bicep:"
+            echo "Kontrollera att följande finns i $NETWORK_FILE:"
             echo "- En regel med namn 'AllowHttpInbound'"
             echo "- sourceAddressPrefix inställd på 'Internet'"
             echo "- destinationPortRange inställd på '80'"
