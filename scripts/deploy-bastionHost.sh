@@ -1,1 +1,0 @@
-az vm create --resource-group AppRG --name BastionHost --image Ubuntu2404 --admin-username azureuser --generate-ssh-keys --vnet-name AppVNet --subnet BastionSubnet --nsg AppNSG --public-ip-address BastionPublicIP

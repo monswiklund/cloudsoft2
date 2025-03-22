@@ -1,2 +1,0 @@
-az network vnet create --resource-group AppRG --name AppVNet --address-prefixes 10.0.0.0/16 --subnet-name AppSubnet --subnet-prefix 10.0.1.0/24
-az network vnet subnet create --resource-group AppRG --vnet-name AppVNet --name BastionSubnet --address-prefixes 10.0.2.0/24
