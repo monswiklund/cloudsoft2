@@ -1,0 +1,185 @@
+name: Azure Infrastructure Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bicep/**"
+      - "scripts/**"
+      - ".github/workflows/azure-deploy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bicep/**"
+      - "scripts/**"
+  workflow_dispatch: # Tillåter manuell körning
+
+env:
+  BICEP_FILE_PATH: "./bicep/main.bicep"
+  PARAMETERS_FILE_PATH: "./bicep/main.parameters.json"
+  DEPLOYMENT_NAME: "github-workflow-deployment"
+
+jobs:
+  validate:
+    name: Validate Bicep templates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          bicep --version
+
+      - name: Validate Bicep templates
+        run: |
+          echo "Validating Bicep templates..."
+          az deployment group validate \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_FILE_PATH }} \
+            --parameters @${{ env.PARAMETERS_FILE_PATH }}
+
+  preview:
+    name: Preview changes (What-if)
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          bicep --version
+
+      - name: Run What-If analysis
+        id: whatif
+        run: |
+          echo "Running what-if analysis to preview changes..."
+          WHATIF_OUTPUT=$(az deployment group what-if \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_FILE_PATH }} \
+            --parameters @${{ env.PARAMETERS_FILE_PATH }} \
+            --no-pretty-print)
+
+          echo "What-If Output:"
+          echo "$WHATIF_OUTPUT"
+
+          # Sammanfatta ändringarna
+          CREATE_COUNT=$(echo "$WHATIF_OUTPUT" | grep -c "Create")
+          UPDATE_COUNT=$(echo "$WHATIF_OUTPUT" | grep -c "Modify")
+          DELETE_COUNT=$(echo "$WHATIF_OUTPUT" | grep -c "Delete")
+
+          echo "Changes summary: $CREATE_COUNT creates, $UPDATE_COUNT updates, $DELETE_COUNT deletes"
+
+          # Spara output till en fil för senare steg
+          echo "$WHATIF_OUTPUT" > whatif-output.txt
+
+      - name: Upload What-If results
+        uses: actions/upload-artifact@v3
+        with:
+          name: whatif-results
+          path: whatif-output.txt
+          retention-days: 7
+
+  deploy:
+    name: Deploy Infrastructure
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: production # Använder GitHub Environments för godkännande
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          bicep --version
+
+      - name: Deploy Bicep template
+        id: deploy
+        run: |
+          echo "Deploying Bicep template to Azure..."
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --name ${{ env.DEPLOYMENT_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_FILE_PATH }} \
+            --parameters @${{ env.PARAMETERS_FILE_PATH }})
+
+          echo "Deployment completed successfully!"
+
+          # Extrahera och visa outputs
+          echo "Deployment outputs:"
+          BASTION_PUBLIC_IP=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.bastionPublicIp.value')
+          REVERSE_PROXY_PUBLIC_IP=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.reverseProxyPublicIp.value')
+          REVERSE_PROXY_PRIVATE_IP=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.reverseProxyPrivateIp.value')
+          APP_SERVER_PRIVATE_IP=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appServerPrivateIp.value')
+
+          echo "Bastion Public IP: $BASTION_PUBLIC_IP"
+          echo "Reverse Proxy Public IP: $REVERSE_PROXY_PUBLIC_IP"
+          echo "Reverse Proxy Private IP: $REVERSE_PROXY_PRIVATE_IP"
+          echo "App Server Private IP: $APP_SERVER_PRIVATE_IP"
+
+          # Spara IPs för senare användning
+          echo "BASTION_PUBLIC_IP=$BASTION_PUBLIC_IP" >> $GITHUB_ENV
+          echo "REVERSE_PROXY_PUBLIC_IP=$REVERSE_PROXY_PUBLIC_IP" >> $GITHUB_ENV
+          echo "REVERSE_PROXY_PRIVATE_IP=$REVERSE_PROXY_PRIVATE_IP" >> $GITHUB_ENV
+          echo "APP_SERVER_PRIVATE_IP=$APP_SERVER_PRIVATE_IP" >> $GITHUB_ENV
+
+      - name: Generate connection details
+        run: |
+          echo "## Deployment Completed Successfully! :rocket:" > deployment-details.md
+          echo "" >> deployment-details.md
+          echo "### Connection Information" >> deployment-details.md
+          echo "" >> deployment-details.md
+          echo "| Server | IP Address |" >> deployment-details.md
+          echo "|--------|------------|" >> deployment-details.md
+          echo "| Bastion Host | ${{ env.BASTION_PUBLIC_IP }} |" >> deployment-details.md
+          echo "| Reverse Proxy | ${{ env.REVERSE_PROXY_PUBLIC_IP }} |" >> deployment-details.md
+          echo "" >> deployment-details.md
+          echo "### Internal Network" >> deployment-details.md
+          echo "" >> deployment-details.md
+          echo "| Server | Private IP |" >> deployment-details.md
+          echo "|--------|------------|" >> deployment-details.md
+          echo "| Reverse Proxy | ${{ env.REVERSE_PROXY_PRIVATE_IP }} |" >> deployment-details.md
+          echo "| App Server | ${{ env.APP_SERVER_PRIVATE_IP }} |" >> deployment-details.md
+          echo "" >> deployment-details.md
+          echo "### Access Instructions" >> deployment-details.md
+          echo "" >> deployment-details.md
+          echo "1. Connect to Bastion Host: `ssh azureuser@${{ env.BASTION_PUBLIC_IP }}`" >> deployment-details.md
+          echo "2. From Bastion, connect to App Server: `ssh azureuser@${{ env.APP_SERVER_PRIVATE_IP }}`" >> deployment-details.md
+          echo "3. Access application via browser: `http://${{ env.REVERSE_PROXY_PUBLIC_IP }}/`" >> deployment-details.md
+
+      - name: Upload deployment details
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-details
+          path: deployment-details.md
+          retention-days: 30
