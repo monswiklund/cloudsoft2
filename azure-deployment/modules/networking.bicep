@@ -72,7 +72,7 @@ resource reverseProxyNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = 
           sourceAddressPrefix: 'Internet'  // Använder tjänstetagg istället för *
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '8080'
+          destinationPortRange: '80'
           description: 'Tillåt HTTP från internet'
         }
       }
@@ -128,7 +128,7 @@ resource appServerNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
           sourceAddressPrefix: reverseProxySubnetPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '5050'
+          destinationPortRange: '5000'
           description: 'Tillåt HTTP (5000) endast från Reverse Proxy'
         }
       }
