@@ -44,7 +44,7 @@ jobs:
           echo "Aktuell arbetskatalog:"
           pwd
 
-          - name: Visa exakt innehåll i networking.bicep
-  run: |
-    echo "Innehåll i networking.bicep:"
-    cat azure-deployment/modules/networking.bicep
+      - name: Visa exakt innehåll i networking.bicep
+        run: |
+          echo "Innehåll i networking.bicep:"
+          cat azure-deployment/modules/networking.bicep
