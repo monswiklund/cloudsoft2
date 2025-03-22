@@ -2,36 +2,44 @@ name: HTTP Port 5000 Kontroll
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
+      - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
-  workflow_dispatch:  # Tillåter manuell körning
+      - "azure-deployment/modules/networking.bicep"
+  workflow_dispatch: # Tillåter manuell körning
 
 jobs:
   check-http-port-5000:
     name: Kontrollera HTTP Port 5000 Konfiguration
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checka ut koden
         uses: actions/checkout@v3
-      
+
       - name: Kontrollera att port 5000 bara är öppen från Reverse Proxy till App Server
         run: |
           echo "Kontrollerar att port 5000 bara är öppen från Reverse Proxy till App Server..."
-          
-          if grep -q "name: 'AllowHttpFromReverseProxy'" networking.bicep && \
-             grep -q "sourceAddressPrefix: reverseProxySubnetPrefix" networking.bicep && \
-             grep -q "destinationPortRange: '5000'" networking.bicep; then
+
+          # Använd den korrekta sökvägen till networking.bicep
+          NETWORK_FILE="azure-deployment/modules/networking.bicep"
+
+          if [ ! -f "$NETWORK_FILE" ]; then
+            echo "Fel: $NETWORK_FILE existerar inte!"
+            exit 1
+          fi
+
+          if grep -q "name: 'AllowHttpFromReverseProxy'" "$NETWORK_FILE" && \
+             grep -q "sourceAddressPrefix: reverseProxySubnetPrefix" "$NETWORK_FILE" && \
+             grep -q "destinationPortRange: '5000'" "$NETWORK_FILE"; then
             echo "✓ Port 5000 är korrekt konfigurerad mellan Reverse Proxy och App Server."
             exit 0
           else
             echo "Fel: Kunde inte bekräfta korrekt konfiguration för port 5000 mellan Reverse Proxy och App Server!"
-            echo "Kontrollera att följande finns i networking.bicep:"
+            echo "Kontrollera att följande finns i $NETWORK_FILE:"
             echo "- En regel med namn 'AllowHttpFromReverseProxy'"
             echo "- sourceAddressPrefix inställd på reverseProxySubnetPrefix"
             echo "- destinationPortRange inställd på '5000'"

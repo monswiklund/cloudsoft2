@@ -2,37 +2,45 @@ name: SSH Intern Kontroll
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
+      - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
-  workflow_dispatch:  # Tillåter manuell körning
+      - "azure-deployment/modules/networking.bicep"
+  workflow_dispatch: # Tillåter manuell körning
 
 jobs:
   check-ssh-internal:
     name: Kontrollera SSH Intern Konfiguration
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checka ut koden
         uses: actions/checkout@v3
-      
+
       - name: Kontrollera att SSH 22 internt bara är konfigurerat från Bastion till övriga servrar
         run: |
           echo "Kontrollerar att SSH internt bara är konfigurerat från Bastion till övriga servrar..."
-          
+
+          # Använd den korrekta sökvägen till networking.bicep
+          NETWORK_FILE="azure-deployment/modules/networking.bicep"
+
+          if [ ! -f "$NETWORK_FILE" ]; then
+            echo "Fel: $NETWORK_FILE existerar inte!"
+            exit 1
+          fi
+
           # Kontrollera att Reverse Proxy tillåter SSH från Bastion
-          REVERSEPROXY_SSH_FROM_BASTION=$(grep -A10 "reverseProxyNsg" networking.bicep | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
-          
+          REVERSEPROXY_SSH_FROM_BASTION=$(grep -A10 "reverseProxyNsg" "$NETWORK_FILE" | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
+
           # Kontrollera att App Server tillåter SSH från Bastion
-          APPSERVER_SSH_FROM_BASTION=$(grep -A10 "appServerNsg" networking.bicep | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
-          
+          APPSERVER_SSH_FROM_BASTION=$(grep -A10 "appServerNsg" "$NETWORK_FILE" | grep -c -E "name:.*AllowSshFromBastion.*sourceAddressPrefix:.*bastionSubnetPrefix.*destinationPortRange:.*22")
+
           # Kontrollera att det inte finns andra interna SSH-regler
-          TOTAL_INTERNAL_SSH_RULES=$(grep -c -E "name:.*AllowSsh.*sourceAddressPrefix:.*SubnetPrefix.*destinationPortRange:.*22" networking.bicep)
-          
+          TOTAL_INTERNAL_SSH_RULES=$(grep -c -E "name:.*AllowSsh.*sourceAddressPrefix:.*SubnetPrefix.*destinationPortRange:.*22" "$NETWORK_FILE")
+
           if [ "$REVERSEPROXY_SSH_FROM_BASTION" -eq 1 ] && [ "$APPSERVER_SSH_FROM_BASTION" -eq 1 ] && [ "$TOTAL_INTERNAL_SSH_RULES" -eq 2 ]; then
             echo "✓ SSH internt är korrekt konfigurerat från Bastion till övriga servrar."
             exit 0

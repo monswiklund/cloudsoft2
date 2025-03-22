@@ -2,32 +2,40 @@ name: SSH Internet Kontroll
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
+      - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
     paths:
-      - '**networking.bicep'
-  workflow_dispatch:  # Tillåter manuell körning
+      - "azure-deployment/modules/networking.bicep"
+  workflow_dispatch: # Tillåter manuell körning
 
 jobs:
   check-ssh-internet:
     name: Kontrollera SSH Internet Konfiguration
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checka ut koden
         uses: actions/checkout@v3
-      
+
       - name: Kontrollera att SSH 22 från internet bara är öppen till Bastion
         run: |
           echo "Kontrollerar att SSH port 22 från internet bara är öppen till Bastion..."
-          
+
+          # Använd den korrekta sökvägen till networking.bicep
+          NETWORK_FILE="azure-deployment/modules/networking.bicep"
+
+          if [ ! -f "$NETWORK_FILE" ]; then
+            echo "Fel: $NETWORK_FILE existerar inte!"
+            exit 1
+          fi
+
           # Räkna antalet regler som tillåter SSH från internet
-          SSH_FROM_INTERNET=$(grep -A5 "name: 'AllowSsh.*Inbound'" networking.bicep | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
-          BASTION_SSH_RULE=$(grep -A5 "name: 'AllowSshInbound'" networking.bicep | grep -A5 "bastionNsg" | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
-          
+          SSH_FROM_INTERNET=$(grep -A5 "name: 'AllowSsh.*Inbound'" "$NETWORK_FILE" | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
+          BASTION_SSH_RULE=$(grep -A5 "name: 'AllowSshInbound'" "$NETWORK_FILE" | grep -A5 "bastionNsg" | grep -c -E "sourceAddressPrefix:.*Internet.*destinationPortRange:.*22")
+
           if [ "$SSH_FROM_INTERNET" -eq 1 ] && [ "$BASTION_SSH_RULE" -eq 1 ]; then
             echo "✓ SSH port 22 från internet är endast öppen till Bastion."
             exit 0
