@@ -1,0 +1,77 @@
+name: Deploy Application
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+  workflow_dispatch: # Manuell triggering
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore src/MyApp.sln
+
+      - name: Build
+        run: dotnet build src/MyApp.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test src/MyApp.sln --configuration Release --no-build
+
+      - name: Publish
+        run: dotnet publish src/MyApp/MyApp.csproj -c Release -o ./publish
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-package
+          path: ./publish
+
+  deploy:
+    name: Deploy Application
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production # För manuellt godkännande
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: app-package
+          path: ./app-package
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.BASTION_HOST_KEY }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to App Server via Bastion
+        run: |
+          # Skapa en SSH-tunnel genom Bastion
+          ssh -i ~/.ssh/id_rsa -fN -L 2222:10.0.3.4:22 azureuser@${{ secrets.BASTION_IP }}
+
+          # Kopiera filerna genom tunneln
+          scp -P 2222 -r ./app-package/* azureuser@localhost:/app/
+
+          # Starta om applikationstjänsten
+          ssh -p 2222 azureuser@localhost 'sudo systemctl restart dotnet-app'
+
+          # Stäng tunneln
+          pkill -f "ssh -i ~/.ssh/id_rsa -fN -L 2222:10.0.3.4:22"

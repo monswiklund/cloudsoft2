@@ -8,8 +8,8 @@
 //
 // Funktioner:
 // - Helt intern VM utan publik IP
-// - Kör min .NET-applikation
-// - Automatisk konfiguration via Custom Script Extension
+// - Kör en .NET-applikation
+// - Automatisk konfiguration via Custom Script Extension med appserver-setup.sh
 //
 // Senast uppdaterad: 2024-03-23
 // ===================================================================

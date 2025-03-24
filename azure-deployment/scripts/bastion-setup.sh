@@ -3,8 +3,8 @@
 # BASTION-SETUP.SH
 # ===================================================================
 # Konfigurationsscript för min Bastion-server (jump host)
-# Denna server fungerar som den enda ingångspunkten till min infrastruktur
-# via SSH, och måste därför vara extra säker.
+# Denna server fungerar som den enda ingångspunkten till mitt nätverk
+# via SSH. Den har extra säkerhetsåtgärder för att skydda det interna
 #
 # Skriptet gör följande:
 # 1. Installerar fail2ban för att förhindra brute force-attacker
@@ -17,7 +17,7 @@
 # ===================================================================
 
 # --- Systemuppdatering ---
-# Alltid bra att börja med en uppdaterad server för att täppa igen säkerhetshål
+# Alltid bra att börja med en uppdatering av systemet
 apt-get update
 apt-get upgrade -y
 
