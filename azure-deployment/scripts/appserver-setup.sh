@@ -34,6 +34,10 @@ apt-get install -y dotnet-sdk-9.0
 # --- Skapar applikationsmappen ---
 mkdir -p /app
 
+Kopiera din applikation till denna mapp (/app) och starta om tjänsten med:
+sudo systemctl restart dotnet-app
+EOL
+
 # --- Konfigurerar systemd-tjänst ---
 cat > /etc/systemd/system/dotnet-app.service << 'EOL'
 [Unit]
