@@ -169,7 +169,7 @@ resource appServerNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
           sourceAddressPrefix: reverseProxySubnetPrefix  // Endast från Reverse Proxy
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '5050'  // Lyssnar på 5000
+          destinationPortRange: '5000'  // Lyssnar på 5000
           description: 'Tillåt HTTP (5000) endast från Reverse Proxy'
         }
       }
