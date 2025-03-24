@@ -9,10 +9,12 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Konfiguration - ersätt med dina faktiska värden från deploymentet
+# Konfigurationsvariabler - hämta alla IP-adresser från Azure deployment
 BASTION_IP=$(az deployment group show --resource-group myapp-rg --name myapp-deployment --query 'properties.outputs.bastionPublicIp.value' -o tsv)
-BASTION_USER="azureuser"
-SSH_KEY_PATH="~/.ssh/id_rsa" # Din lokala SSH-nyckel som används för att ansluta till Bastion
+REVERSEPROXY_IP=$(az deployment group show --resource-group myapp-rg --name myapp-deployment --query 'properties.outputs.reverseProxyPrivateIp.value' -o tsv)
+APPSERVER_IP=$(az deployment group show --resource-group myapp-rg --name myapp-deployment --query 'properties.outputs.appServerPrivateIp.value' -o tsv)
+BASTION_USER="azureuser" # Användarnamn för att ansluta till Bastion
+SSH_KEY_PATH="~/.ssh/id_rsa" # Lokala SSH-nyckeln för autentisering
 
 # Timestamp-fil för att lagra information om senaste åtgärder
 TIMESTAMP_FILE="$HOME/.myapp-timestamps"
@@ -37,8 +39,9 @@ update_timestamp() {
 get_timestamp() {
     local action=$1
     local default="Aldrig"
-    
+    # Kontrollera om timestamp-filen finns
     if [ -f "$TIMESTAMP_FILE" ]; then
+    # Hämta resultatet från grep och klipp bort prefixet
         local result=$(grep "^$action:" "$TIMESTAMP_FILE" | cut -d':' -f2- | xargs)
         if [ -n "$result" ]; then
             echo "$result"
@@ -54,12 +57,12 @@ get_timestamp() {
 clean_host_keys() {
     echo -e "${YELLOW}Rensar gamla SSH host keys...${NC}"
     
-    # Tar bort eventuellt befintliga nycklar för våra servrar
+    # Tar bort eventuellt befintliga nycklar servrar
     ssh-keygen -R $BASTION_IP 2>/dev/null
     ssh-keygen -R myapp-bastion 2>/dev/null
-    ssh-keygen -R 10.0.2.4 2>/dev/null
+    ssh-keygen -R $REVERSEPROXY_IP 2>/dev/null
     ssh-keygen -R myapp-reverseproxy 2>/dev/null
-    ssh-keygen -R 10.0.3.4 2>/dev/null
+    ssh-keygen -R $APPSERVER_IP 2>/dev/null
     ssh-keygen -R myapp-appserver 2>/dev/null
     
     echo -e "${GREEN}SSH host keys har rensats!${NC}"
@@ -80,6 +83,8 @@ update_ssh_config() {
     if grep -q "Host myapp-bastion" ~/.ssh/config; then
         # Uppdatera befintlig konfiguration
         sed -i.bak "s/HostName .* # myapp-bastion/HostName ${BASTION_IP} # myapp-bastion/g" ~/.ssh/config
+        sed -i.bak "s/HostName .* # myapp-reverseproxy/HostName ${REVERSEPROXY_IP} # myapp-reverseproxy/g" ~/.ssh/config
+        sed -i.bak "s/HostName .* # myapp-appserver/HostName ${APPSERVER_IP} # myapp-appserver/g" ~/.ssh/config
     else
         # Lägg till ny konfiguration
         cat >> ~/.ssh/config << EOL
@@ -94,7 +99,7 @@ Host myapp-bastion
     UserKnownHostsFile /dev/null
 
 Host myapp-reverseproxy
-    HostName 10.0.2.4
+    HostName ${REVERSEPROXY_IP} # myapp-reverseproxy
     User ${BASTION_USER}
     IdentityFile ${SSH_KEY_PATH}
     ProxyJump myapp-bastion
@@ -103,7 +108,7 @@ Host myapp-reverseproxy
     UserKnownHostsFile /dev/null
 
 Host myapp-appserver
-    HostName 10.0.3.4
+    HostName ${APPSERVER_IP} # myapp-appserver
     User ${BASTION_USER}
     IdentityFile ${SSH_KEY_PATH}
     ProxyJump myapp-bastion
@@ -134,144 +139,149 @@ setup_bastion_access() {
     # Uppdatera timestamp
     update_timestamp "setup_bastion_access"
 }
-
-# Skapa en SSH-tunnel till appservern på port 5000
-create_app_tunnel() {
-    echo -e "${YELLOW}Skapar SSH-tunnel till appservern port 5000...${NC}"
+# Logga en filöverföring till historikfilen
+log_file_transfer() {
+    local source=$1
+    local destination=$2
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    local transfer_log="$HOME/.myapp-transfers.log"
     
-    # Avsluta eventuell befintlig tunnel på port 5000
-    lsof -ti:5000 | xargs kill -9 2>/dev/null
+    # Skapa logfilen om den inte finns
+    touch "$transfer_log"
     
-    # Skapa SSH-tunnel genom bastion till appserver
-    ssh -L 5000:10.0.3.4:5000 -N -f myapp-bastion
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}SSH-tunnel skapad! Besök http://localhost:5000 i din webbläsare.${NC}"
-        echo -e "${YELLOW}Tunneln körs i bakgrunden. Kör 'lsof -ti:5000 | xargs kill -9' för att stänga den.${NC}"
-        update_timestamp "create_app_tunnel"
+    # Begränsa filnamnet om det är för långt
+    local short_source
+    if [[ ${#source} -gt 40 ]]; then
+        short_source="...${source: -40}"
     else
-        echo -e "${RED}Misslyckades med att skapa SSH-tunnel.${NC}"
+        short_source="$source"
     fi
+    
+    # Lägg till överföringen i loggen (i början av filen)
+    echo "$timestamp | $short_source | $destination" | cat - "$transfer_log" > /tmp/templog && mv /tmp/templog "$transfer_log"
+    
+    # Behåll bara de 100 senaste överföringarna
+    tail -n 100 "$transfer_log" > /tmp/templog && mv /tmp/templog "$transfer_log"
 }
 
-# Skapa en SSH-tunnel för filöverföring
-create_file_tunnel() {
-    echo -e "${YELLOW}Skapar SSH-tunnel för filöverföring (port 2222)...${NC}"
+# Visa senaste filöverföringar
+show_recent_transfers() {
+    local transfer_log="$HOME/.myapp-transfers.log"
+    local count=${1:-5} # Antal överföringar att visa, standard är 5
     
-    # Avsluta eventuell befintlig tunnel på port 2222
-    lsof -ti:2222 | xargs kill -9 2>/dev/null
+    echo -e "${BLUE}=== Senaste $count filöverföringar ===${NC}"
     
-    # Skapa SSH-tunnel genom bastion till appserver för SSH-trafik
-    ssh -L 2222:10.0.3.4:22 -N -f myapp-bastion
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}SSH-tunnel för filöverföring skapad på port 2222!${NC}"
-        echo -e "${YELLOW}Tunneln körs i bakgrunden. Kör 'lsof -ti:2222 | xargs kill -9' för att stänga den.${NC}"
-        update_timestamp "create_file_tunnel"
+    if [ -f "$transfer_log" ]; then
+        head -n $count "$transfer_log" | while IFS='|' read -r timestamp source destination; do
+            echo -e "${YELLOW}$timestamp${NC} | ${GREEN}$source${NC} | ${BLUE}$destination${NC}"
+        done
     else
-        echo -e "${RED}Misslyckades med att skapa SSH-tunnel för filöverföring.${NC}"
+        echo -e "${YELLOW}Ingen överföringshistorik finns ännu.${NC}"
     fi
+    echo
+}
+# Logga en filöverföring till historikfilen
+log_file_transfer() {
+    local source=$1
+    local destination=$2
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    local transfer_log="$HOME/.myapp-transfers.log"
+    
+    # Skapa logfilen om den inte finns
+    touch "$transfer_log"
+    
+    # Begränsa filnamnet om det är för långt
+    local short_source
+    if [[ ${#source} -gt 40 ]]; then
+        short_source="...${source: -40}"
+    else
+        short_source="$source"
+    fi
+    
+    # Lägg till överföringen i loggen (i början av filen)
+    echo "$timestamp | $short_source | $destination" | cat - "$transfer_log" > /tmp/templog && mv /tmp/templog "$transfer_log"
+    
+    # Behåll bara de 100 senaste överföringarna
+    tail -n 100 "$transfer_log" > /tmp/templog && mv /tmp/templog "$transfer_log"
 }
 
-# Funktion för att överföra filer till appservern
+# Visa senaste filöverföringar
+show_recent_transfers() {
+    local transfer_log="$HOME/.myapp-transfers.log"
+    local count=${1:-5} # Antal överföringar att visa, standard är 5
+    
+    echo -e "${BLUE}=== Senaste $count filöverföringar ===${NC}"
+    
+    if [ -f "$transfer_log" ]; then
+        head -n $count "$transfer_log" | while IFS='|' read -r timestamp source destination; do
+            echo -e "${YELLOW}$timestamp${NC} | ${GREEN}$source${NC} | ${BLUE}$destination${NC}"
+        done
+    else
+        echo -e "${YELLOW}Ingen överföringshistorik finns ännu.${NC}"
+    fi
+    echo
+}
+
+# Funktion för att överföra filer till App Server
 transfer_files() {
     echo -e "${YELLOW}Överför filer till App Server...${NC}"
     
-    # Fråga efter källsökväg om den inte anges
-    local source_path
-    read -p "Ange sökväg till filer att överföra: " source_path
+    # Standardkatalog för överföring
+    DEFAULT_REMOTE_PATH="/home/azureuser/app"
     
-    if [ -z "$source_path" ]; then
-        echo -e "${RED}Ingen källsökväg angiven.${NC}"
+    # Visa senaste överföringar först
+    show_recent_transfers
+    
+    # Fråga användaren om sökväg till lokal fil/katalog
+    read -p "Ange sökväg till lokal fil eller katalog som ska överföras: " LOCAL_PATH
+    
+    # Hantera ~ i sökvägen (expandera till hemkatalogen)
+    LOCAL_PATH="${LOCAL_PATH/#\~/$HOME}"
+    
+    # Kontrollera om filen/katalogen existerar
+    if [ ! -e "$LOCAL_PATH" ]; then
+        echo -e "${RED}Filen eller katalogen existerar inte. Försök igen.${NC}"
         return 1
     fi
     
-    if [ ! -e "$source_path" ]; then
-        echo -e "${RED}Källsökvägen existerar inte: $source_path${NC}"
-        return 1
+    # Fråga användaren om målkatalog på App Server
+    read -p "Ange målkatalog på App Server [$DEFAULT_REMOTE_PATH]: " REMOTE_PATH
+    
+    # Sätt standardvärde om inget anges
+    REMOTE_PATH=${REMOTE_PATH:-$DEFAULT_REMOTE_PATH}
+    
+    # Visa sammanfattning innan överföring
+    echo -e "${BLUE}=== Överföringsinformation ===${NC}"
+    echo -e "Från: ${GREEN}$LOCAL_PATH${NC}"
+    echo -e "Till: ${GREEN}myapp-appserver:$REMOTE_PATH${NC}"
+    
+    # Be om bekräftelse
+    read -p "Fortsätt med överföringen? (j/n): " CONFIRM
+    if [[ ! $CONFIRM =~ ^[Jj]$ ]]; then
+        echo -e "${YELLOW}Överföring avbruten.${NC}"
+        return 0
     fi
     
-    echo -e "${YELLOW}Välj överföringsmetod:${NC}"
-    echo "1) Via SSH-tunnel (port 2222)"
-    echo "2) Direkt via ProxyJump"
-    read -p "Ditt val: " transfer_method
+    # Skapa målkatalogen om den inte finns
+    echo -e "${YELLOW}Kontrollerar om målkatalogen finns på servern...${NC}"
+    ssh myapp-appserver "mkdir -p $REMOTE_PATH"
     
-    case $transfer_method in
-        1)
-            # Först skapa tunneln
-            create_file_tunnel
-            
-            # Sedan överföra filerna via tunneln
-            echo -e "${YELLOW}Överför filer via SSH-tunnel...${NC}"
-            scp -r -P 2222 "$source_path" "azureuser@localhost:~/"
-            ;;
-        2)
-            # Överför direkt med ProxyJump
-            echo -e "${YELLOW}Överför filer direkt via ProxyJump...${NC}"
-            scp -r -o "ProxyJump=myapp-bastion" "$source_path" "azureuser@myapp-appserver:~/"
-            ;;
-        *)
-            echo -e "${RED}Ogiltigt val, avbryter.${NC}"
-            return 1
-            ;;
-    esac
+    # Visa progress under överföringen
+    echo -e "${GREEN}Överför till App Server...${NC}"
     
+    # Använd SCP för överföring med rekursiv flagga för kataloger
+    scp -r "$LOCAL_PATH" "myapp-appserver:$REMOTE_PATH"
+    
+    # Kontrollera om överföringen lyckades
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Filöverföring slutförd!${NC}"
         update_timestamp "transfer_files"
+        
+        # Logga den lyckade överföringen
+        log_file_transfer "$LOCAL_PATH" "myapp-appserver:$REMOTE_PATH"
     else
         echo -e "${RED}Filöverföring misslyckades.${NC}"
-    fi
-}
-
-# Funktion för att installera .NET SDK på appservern
-install_dotnet_sdk() {
-    echo -e "${YELLOW}Installerar/uppdaterar .NET SDK på App Server...${NC}"
-    
-    # Fråga efter .NET-version
-    local dotnet_version
-    read -p "Ange .NET-version att installera (t.ex. 8.0): " dotnet_version
-    
-    if [ -z "$dotnet_version" ]; then
-        echo -e "${YELLOW}Ingen version angiven, använder standardversion 8.0${NC}"
-        dotnet_version="8.0"
-    fi
-    
-    # Kör kommandot för att installera .NET SDK på appservern
-    ssh myapp-appserver << EOF
-    echo "Kontrollerar om .NET är installerat..."
-    
-    if command -v dotnet &> /dev/null; then
-        echo "Nuvarande installerade .NET-versioner:"
-        dotnet --list-sdks
-        dotnet --list-runtimes
-    fi
-    
-    echo "Installerar .NET SDK $dotnet_version..."
-    
-    # Installera nödvändiga paket
-    sudo apt-get update
-    sudo apt-get install -y wget apt-transport-https
-    
-    # Lägg till Microsofts paketrepo
-    wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-    sudo dpkg -i packages-microsoft-prod.deb
-    rm packages-microsoft-prod.deb
-    
-    # Uppdatera paketlistor och installera .NET SDK
-    sudo apt-get update
-    sudo apt-get install -y dotnet-sdk-$dotnet_version
-    
-    echo "Installation slutförd. Installerade .NET-versioner:"
-    dotnet --list-sdks
-    dotnet --list-runtimes
-EOF
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}.NET SDK installation/uppdatering slutförd!${NC}"
-        update_timestamp "install_dotnet_sdk"
-    else
-        echo -e "${RED}.NET SDK installation/uppdatering misslyckades.${NC}"
+        echo -e "${YELLOW}Tips: Kontrollera att du har rätt behörigheter på servern.${NC}"
     fi
 }
 
@@ -281,23 +291,21 @@ show_menu() {
     local config_time=$(get_timestamp "update_ssh_config")
     local clean_time=$(get_timestamp "clean_host_keys")
     local setup_time=$(get_timestamp "setup_bastion_access")
-    local tunnel_time=$(get_timestamp "create_app_tunnel")
     local transfer_time=$(get_timestamp "transfer_files")
-    local dotnet_time=$(get_timestamp "install_dotnet_sdk")
     
     echo -e "${BLUE}===== MyApp Cloud Infrastructure =====${NC}"
     echo -e "${YELLOW}Bastion IP:${NC} ${BASTION_IP}"
+    echo -e "${YELLOW}Reverse Proxy IP:${NC} ${REVERSEPROXY_IP}"
+    echo -e "${YELLOW}App Server IP:${NC} ${APPSERVER_IP}"
     echo
     echo "Välj en server att ansluta till:"
-    echo "1) Bastion (Jump Server)"
+    echo "1) Bastion"
     echo "2) Reverse Proxy Server"
     echo "3) App Server (.NET)"
-    echo -e "4) Uppdatera SSH-konfiguration ${YELLOW}(Senast ändrad: $config_time)${NC}"
-    echo -e "5) Rensa SSH host keys ${YELLOW}(Senast ändrad: $clean_time)${NC}"
-    echo -e "6) Konfigurera SSH-åtkomst på Bastion ${YELLOW}(Senast konfigurerad: $setup_time)${NC}"
-    echo -e "7) Skapa SSH-tunnel till App Server (port 5000) ${YELLOW}(Senast skapad: $tunnel_time)${NC}"
-    echo -e "8) Överför filer till App Server ${YELLOW}(Senast: $transfer_time)${NC}"
-    echo -e "9) Installera/uppdatera .NET SDK på App Server ${YELLOW}(Senast: $dotnet_time)${NC}"
+    echo -e "4) Uppdatera ~/.ssh/config auto ${YELLOW}(Senast ändrad: $config_time)${NC}"
+    echo -e "5) Rensa ALLA SSH-nycklar ${YELLOW}(Senast ändrad: $clean_time)${NC}"
+    echo -e "6) Sätt upp SSH-åtkomst på Bastion mellan servrarna ${YELLOW}(Senast konfigurerad: $setup_time)${NC}"
+    echo -e "7) Överför filer med SCP lokalt till App Server ${YELLOW}(Senast: $transfer_time)${NC}"
     echo "q) Avsluta"
     echo
     read -p "Ditt val: " choice
@@ -325,16 +333,10 @@ show_menu() {
             setup_bastion_access
             ;;
         7)
-            create_app_tunnel
-            ;;
-        8)
             transfer_files
             ;;
-        9)
-            install_dotnet_sdk
-            ;;
         q|Q)
-            echo -e "${YELLOW}Avslutar. Ha en trevlig dag!${NC}"
+            echo -e "${YELLOW}Avslutar${NC}"
             exit 0
             ;;
         *)
@@ -343,14 +345,23 @@ show_menu() {
     esac
 }
 
-# Huvudprogrammet
 echo -e "${YELLOW}Hämtar information om din molninfrastruktur...${NC}"
 
-# Kontrollera om BASTION_IP kunde hämtas
+# Kontrollera om IP-adresser kunde hämtas
 if [ -z "$BASTION_IP" ]; then
     echo -e "${RED}Kunde inte hämta Bastion IP-adress. Kontrollera att deploymentet finns.${NC}"
     echo "Du kan ange IP-adressen manuellt genom att redigera variabeln BASTION_IP i skriptet."
     exit 1
+fi
+
+if [ -z "$REVERSEPROXY_IP" ]; then
+    echo -e "${YELLOW}Varning: Kunde inte hämta Reverse Proxy IP-adress. Använder standardvärde 10.0.2.4${NC}"
+    REVERSEPROXY_IP="10.0.2.4"
+fi
+
+if [ -z "$APPSERVER_IP" ]; then
+    echo -e "${YELLOW}Varning: Kunde inte hämta App Server IP-adress. Använder standardvärde 10.0.3.4${NC}"
+    APPSERVER_IP="10.0.3.4"
 fi
 
 # Rensa gamla host keys

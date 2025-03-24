@@ -2,14 +2,14 @@ name: HTTP Port 5000 Kontroll
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main]
     paths:
       - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [main, master, develop]
+    branches: [main]
     paths:
       - "azure-deployment/modules/networking.bicep"
-  workflow_dispatch: # Tillåter manuell körning
+  workflow_dispatch:
 
 jobs:
   check-http-port-5000:
@@ -24,7 +24,6 @@ jobs:
         run: |
           echo "Kontrollerar att port 5000 bara är öppen från Reverse Proxy till App Server..."
 
-          # Använd den korrekta sökvägen till networking.bicep
           NETWORK_FILE="azure-deployment/modules/networking.bicep"
 
           if [ ! -f "$NETWORK_FILE" ]; then

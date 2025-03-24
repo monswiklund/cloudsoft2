@@ -1,15 +1,15 @@
 name: HTTP Port 80 Kontroll
-
+// Workflow körs på push till main, master eller develop branchen
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main]
     paths:
       - "azure-deployment/modules/networking.bicep"
   pull_request:
-    branches: [main, master, develop]
+    branches: [main]
     paths:
       - "azure-deployment/modules/networking.bicep"
-  workflow_dispatch: # Tillåter manuell körning
+  workflow_dispatch: 
 
 jobs:
   check-http-port-80:
@@ -24,7 +24,7 @@ jobs:
         run: |
           echo "Kontrollerar att port 80 är öppen från internet till Reverse Proxy..."
 
-          # Använd den korrekta sökvägen till networking.bicep
+        
           NETWORK_FILE="azure-deployment/modules/networking.bicep"
 
           if [ ! -f "$NETWORK_FILE" ]; then

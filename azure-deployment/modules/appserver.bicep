@@ -1,4 +1,20 @@
-// modules/appserver.bicep
+// ===================================================================
+// APPSERVER.BICEP
+// ===================================================================
+// Den här filen definierar min App Server som kör min .NET-applikation.
+// App Server är den mest isolerade komponenten i min arkitektur och
+// har ingen direkt exponering mot internet. All åtkomst sker via
+// Reverse Proxy (HTTP) eller Bastion (SSH).
+//
+// Funktioner:
+// - Helt intern VM utan publik IP
+// - Kör min .NET-applikation
+// - Automatisk konfiguration via Custom Script Extension
+//
+// Senast uppdaterad: 2024-03-23
+// ===================================================================
+
+// --- Grundläggande parametrar ---
 @description('Prefix för alla resurser i deploymentet')
 param prefix string
 
@@ -12,16 +28,18 @@ param subnetId string
 param adminUsername string
 
 @description('SSH-nyckel för admin-användaren')
-@secure()
+@secure()  // Säkerhetsmarkering för att skydda nyckeln
 param adminPublicKey string
 
 @description('Miljöns typ (dev, test, prod)')
 param environmentType string
 
-// VM-storlek baserat på miljö
+// --- VM-konfiguration ---
+// Anpassar storleken baserat på miljö för kostnadsoptimering
 var vmSize = environmentType == 'prod' ? 'Standard_B2s' : 'Standard_B1s'
 
-// Skapa nätverksgränssnitt för App Server
+// --- Nätverksgränssnitt för App Server ---
+// Ingen publik IP kopplas här, endast internt nätverk
 resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
   name: '${prefix}-appserver-nic'
   location: location
@@ -30,10 +48,11 @@ resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
       {
         name: 'ipconfig1'
         properties: {
-          privateIPAllocationMethod: 'Dynamic'
+          privateIPAllocationMethod: 'Dynamic'  // Låter Azure välja en ledig IP
           subnet: {
-            id: subnetId
+            id: subnetId  // Kopplar till det isolerade App Server-subnätet
           }
+          // Ingen publicIPAddress definierad här - detta är en säkerhetsåtgärd
         }
       }
     ]
@@ -44,10 +63,11 @@ resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
   }
 }
 
-// Hämta innehållet i Bash-skriptet för App Server-konfiguration
+// --- Laddar Bash-skriptet för konfiguration ---
+// Skriptet installerar .NET SDK, skapar en demo-app och konfigurerar den som en tjänst
 var appServerSetupScript = loadFileAsBase64('../scripts/appserver-setup.sh')
 
-// Skapa App Server VM
+// --- App Server VM ---
 resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: '${prefix}-appserver-vm'
   location: location
@@ -58,8 +78,8 @@ resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     storageProfile: {
       imageReference: {
         publisher: 'Canonical'
-        offer: '0001-com-ubuntu-server-jammy' // Ubuntu 22.04 LTS
-        sku: '22_04-lts-gen2'
+        offer: '0001-com-ubuntu-server-jammy' 
+        sku: '22_04-lts-gen2'  
         version: 'latest'
       }
       osDisk: {
@@ -72,7 +92,7 @@ resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: nic.id
+          id: nic.id  // Kopplar till det privata nätverksgränssnittet
         }
       ]
     }
@@ -80,7 +100,7 @@ resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       computerName: '${prefix}-appserver'
       adminUsername: adminUsername
       linuxConfiguration: {
-        disablePasswordAuthentication: true
+        disablePasswordAuthentication: true  // Endast SSH-nyckelbaserad autentisering
         ssh: {
           publicKeys: [
             {
@@ -98,9 +118,11 @@ resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   }
 }
 
-// Använd Custom Script Extension för att konfigurera App Server
+// --- Custom Script Extension för App Server ---
+// Kör appserver-setup.sh automatiskt efter VM-skapande för att
+// installera .NET SDK, skapa demo-appen och konfigurera systemd-tjänsten
 resource appServerVmExtension 'Microsoft.Compute/virtualMachines/extensions@2024-03-01' = {
-  parent: appServerVm
+  parent: appServerVm  // Kopplar som child-resurs till VM:en
   name: 'setup-script'
   location: location
   properties: {
@@ -109,13 +131,15 @@ resource appServerVmExtension 'Microsoft.Compute/virtualMachines/extensions@2024
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     settings: {
-      skipDos2Unix: false
+      skipDos2Unix: false  // Viktigt för att hantera linjeändelser korrekt
     }
     protectedSettings: {
-      script: appServerSetupScript
+      script: appServerSetupScript  // Base64-kodade skriptet
     }
   }
 }
 
-// Outputs
+// --- Outputs ---
+// Exporterar den privata IP-adressen för användning i andra moduler
+// Speciellt viktigt för Reverse Proxy-konfigurationen som behöver veta var App Server finns
 output privateIpAddress string = nic.properties.ipConfigurations[0].properties.privateIPAddress

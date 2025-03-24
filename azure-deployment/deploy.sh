@@ -13,6 +13,8 @@ LOCATION="westeurope"
 DEPLOYMENT_NAME="myapp-deployment"
 TEMPLATE_FILE="main.bicep"
 PARAMETERS_FILE="parameters/main.parameters.json"
+CONNECT_SCRIPT="./connect-to-cloud.sh"
+
 echo -e "${YELLOW}Starting deployment process...${NC}"
 
 # Kontrollera om resursgruppen finns, skapa den annars
@@ -70,6 +72,20 @@ if [ $? -eq 0 ]; then
     echo "App Server Private IP: $(echo $OUTPUTS | jq -r '.appServerPrivateIp.value')"
     
     echo -e "${GREEN}Deployment completed successfully.${NC}"
+    
+    # Kontrollera om connect-skriptet finns
+    if [ -f "$CONNECT_SCRIPT" ]; then
+        echo -e "${YELLOW}Startar uppkoppling till molninfrastrukturen...${NC}"
+        
+        # Gör skriptet körbart om det inte redan är det
+        chmod +x "$CONNECT_SCRIPT"
+        
+        # Kör connect-skriptet
+        "$CONNECT_SCRIPT"
+    else
+        echo -e "${RED}Kunde inte hitta $CONNECT_SCRIPT${NC}"
+        echo -e "${YELLOW}Kontrollera att filen finns och försök köra den manuellt.${NC}"
+    fi
 else
     echo -e "${RED}Deployment failed:${NC}"
     echo "$DEPLOYMENT_RESULT"
