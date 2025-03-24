@@ -87,7 +87,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
 
 // --- Laddar Bash-skriptet för konfiguration ---
 // Konverterar skriptet till base64 för att det ska kunna skickas till VM:en
-var bastionSetupScript = loadFileAsBase64('../scripts/bastion-setup.sh')
+var bastionSetupScript = loadFileAsBase64('../../azure-deployment/scripts/bastion-setup.sh')
 
 // --- Bastion VM ---
 resource bastionVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {

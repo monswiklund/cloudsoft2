@@ -65,8 +65,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
 
 // --- Laddar Bash-skriptet för konfiguration ---
 // Skriptet installerar .NET SDK, skapar en demo-app och konfigurerar den som en tjänst
-var appServerSetupScript = loadFileAsBase64('../scripts/appserver-setup.sh')
-
+var appServerSetupScript = loadFileAsBase64('../../azure-deployment/scripts/appserver-setup.sh')
 // --- App Server VM ---
 resource appServerVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: '${prefix}-appserver-vm'

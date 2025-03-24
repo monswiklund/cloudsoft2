@@ -82,7 +82,7 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
 
 // --- Laddar Bash-skriptet för Nginx-konfiguration ---
 // Skriptet installerar och konfigurerar Nginx som reverse proxy mot App Server
-var nginxSetupScript = loadFileAsBase64('../scripts/nginx-setup.sh')
+var nginxSetupScript = loadFileAsBase64('../../azure-deployment/scripts/nginx-setup.sh')
 
 // --- Reverse Proxy VM ---
 resource reverseProxyVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
