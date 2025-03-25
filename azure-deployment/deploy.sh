@@ -1,6 +1,4 @@
 #!/bin/bash
-# Förbättrad deployment-skript
-
 # Färgkoder för utskrifter
 GREEN='\033[0;32m'
 RED='\033[0;31m'
