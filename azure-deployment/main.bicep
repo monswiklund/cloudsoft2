@@ -43,7 +43,7 @@ module bastion './modules/bastion.bicep' = {
   }
 }
 
-// ReverseProxy med Nginx (tidigare webServer)
+// ReverseProxy med Nginx 
 module reverseProxy './modules/reverseproxy.bicep' = {
   name: 'reverseProxyDeployment'
   params: {
